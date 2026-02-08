@@ -1,0 +1,24 @@
+
+# ===== BUILD =====
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+
+# Copiamos csproj y restauramos (mejor cache)
+COPY TfgApi.csproj ./
+RUN dotnet restore
+
+# Copiamos el resto y publicamos
+COPY . ./
+RUN dotnet publish -c Release -o /app/publish
+
+# ===== RUNTIME =====
+FROM mcr.microsoft.com/dotnet/aspnet:9.0
+WORKDIR /app
+COPY --from=build /app/publish ./
+
+# Azure Container Apps escucha por PORT (normalmente 8080)
+ENV ASPNETCORE_URLS=http://+:8080
+EXPOSE 8080
+
+ENTRYPOINT ["dotnet", "TfgApi.dll"]
+

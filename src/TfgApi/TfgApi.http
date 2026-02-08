@@ -1,0 +1,6 @@
+@TfgApi_HostAddress = http://localhost:5110
+
+GET {{TfgApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
