@@ -3,6 +3,7 @@ using Azure.Storage.Sas;
 using Microsoft.EntityFrameworkCore;
 using TfgApi.Data;
 using TfgApi.Models;
+using TfgApi.Dtos;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,8 +36,6 @@ app.UseHttpsRedirection();
 // =========================
 //   DTOs mínimos (solo foto)
 // =========================
-
-
 
 // =========================
 //          ALUMNOS
@@ -87,14 +86,24 @@ app.MapGet("/api/alumnos/{id:int}", async (int id, TfgDbContext context) =>
     return a is null ? Results.NotFound() : Results.Ok(a);
 });
 
-// POST crear alumno (hashea password)
-app.MapPost("/api/alumnos", async (Alumno alumno, TfgDbContext context) =>
+// POST crear alumno (hashea password + fecha)
+app.MapPost("/api/alumnos", async (AlumnoCreateRequest req, TfgDbContext context) =>
 {
-    if (await context.Alumnos.AnyAsync(a => a.Email == alumno.Email))
+    if (await context.Alumnos.AnyAsync(a => a.Email == req.Email))
         return Results.Conflict("Ese email ya existe");
 
-    alumno.PasswordHash = BCrypt.Net.BCrypt.HashPassword(alumno.PasswordHash);
-    alumno.FechaRegistro = DateTime.UtcNow;
+    var alumno = new Alumno
+    {
+        Nombre = req.Nombre,
+        Apellidos = req.Apellidos,
+        Email = req.Email,
+        Edad = req.Edad,
+        Ciudad = req.Ciudad,
+        InstitucionEducativa = req.InstitucionEducativa,
+        PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.PasswordHash),
+        FechaRegistro = DateTime.UtcNow,
+        FotoPerfilUrl = null
+    };
 
     context.Alumnos.Add(alumno);
     await context.SaveChangesAsync();
@@ -104,11 +113,13 @@ app.MapPost("/api/alumnos", async (Alumno alumno, TfgDbContext context) =>
         alumno.Id,
         alumno.Nombre,
         alumno.Apellidos,
-        alumno.Email
+        alumno.Email,
+        alumno.FechaRegistro
     });
 });
 
-// PUT actualizar alumno (sin tocar password)
+
+// PUT actualizar alumno (sin tocar email/password/fecha/foto)
 app.MapPut("/api/alumnos/{id:int}", async (int id, Alumno alumno, TfgDbContext context) =>
 {
     var existing = await context.Alumnos.FindAsync(id);
@@ -119,8 +130,11 @@ app.MapPut("/api/alumnos/{id:int}", async (int id, Alumno alumno, TfgDbContext c
     existing.Edad = alumno.Edad;
     existing.Ciudad = alumno.Ciudad;
     existing.InstitucionEducativa = alumno.InstitucionEducativa;
-    // no tocamos existing.Email ni existing.PasswordHash aquí
-    // no tocamos FotoPerfilUrl aquí
+
+    // no tocamos existing.Email
+    // no tocamos existing.PasswordHash
+    // no tocamos existing.FechaRegistro
+    // no tocamos existing.FotoPerfilUrl
 
     await context.SaveChangesAsync();
     return Results.NoContent();
@@ -142,35 +156,95 @@ app.MapDelete("/api/alumnos/{id:int}", async (int id, TfgDbContext context) =>
 //         AUTONOMOS
 // =========================
 
+// GET todos (sin password)
 app.MapGet("/api/autonomos", async (TfgDbContext context) =>
-    Results.Ok(await context.Autonomos.AsNoTracking().ToListAsync())
-);
+{
+    var autonomos = await context.Autonomos
+        .AsNoTracking()
+        .Select(a => new
+        {
+            a.Id,
+            a.Nombre,
+            a.Oficio,
+            a.Ciudad,
+            a.Email,
+            a.FechaRegistro
+        })
+        .ToListAsync();
 
+    return Results.Ok(autonomos);
+});
+
+// GET por id (sin password)
 app.MapGet("/api/autonomos/{id:int}", async (int id, TfgDbContext context) =>
 {
-    var item = await context.Autonomos.FindAsync(id);
-    return item is null ? Results.NotFound() : Results.Ok(item);
+    var a = await context.Autonomos
+        .AsNoTracking()
+        .Where(x => x.Id == id)
+        .Select(x => new
+        {
+            x.Id,
+            x.Nombre,
+            x.Oficio,
+            x.Ciudad,
+            x.Email,
+            x.FechaRegistro
+        })
+        .FirstOrDefaultAsync();
+
+    return a is null ? Results.NotFound() : Results.Ok(a);
 });
 
-app.MapPost("/api/autonomos", async (Autonomo autonomo, TfgDbContext context) =>
+// POST crear (hashea password + fecha)
+app.MapPost("/api/autonomos", async (AutonomoCreateRequest req, TfgDbContext context) =>
 {
+    if (await context.Autonomos.AnyAsync(a => a.Email == req.Email))
+        return Results.Conflict("Ese email ya existe");
+
+    var autonomo = new Autonomo
+    {
+        Nombre = req.Nombre,
+        Oficio = req.Oficio,
+        Ciudad = req.Ciudad,
+        Email = req.Email,
+        PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.PasswordHash),
+        FechaRegistro = DateTime.UtcNow
+    };
+
     context.Autonomos.Add(autonomo);
     await context.SaveChangesAsync();
-    return Results.Created($"/api/autonomos/{autonomo.Id}", autonomo);
+
+    return Results.Created($"/api/autonomos/{autonomo.Id}", new
+    {
+        autonomo.Id,
+        autonomo.Nombre,
+        autonomo.Oficio,
+        autonomo.Ciudad,
+        autonomo.Email,
+        autonomo.FechaRegistro
+    });
 });
 
+
+// PUT actualizar (sin tocar email/password/fecha)
 app.MapPut("/api/autonomos/{id:int}", async (int id, Autonomo autonomo, TfgDbContext context) =>
 {
     var existing = await context.Autonomos.FindAsync(id);
     if (existing is null) return Results.NotFound();
 
-    context.Entry(existing).CurrentValues.SetValues(autonomo);
-    existing.Id = id;
+    existing.Nombre = autonomo.Nombre;
+    existing.Oficio = autonomo.Oficio;
+    existing.Ciudad = autonomo.Ciudad;
+
+    // no tocamos existing.Email
+    // no tocamos existing.PasswordHash
+    // no tocamos existing.FechaRegistro
 
     await context.SaveChangesAsync();
     return Results.NoContent();
 });
 
+// DELETE
 app.MapDelete("/api/autonomos/{id:int}", async (int id, TfgDbContext context) =>
 {
     var item = await context.Autonomos.FindAsync(id);
@@ -186,35 +260,95 @@ app.MapDelete("/api/autonomos/{id:int}", async (int id, TfgDbContext context) =>
 //          EMPRESAS
 // =========================
 
+// GET todas (sin password)
 app.MapGet("/api/empresas", async (TfgDbContext context) =>
-    Results.Ok(await context.Empresas.AsNoTracking().ToListAsync())
-);
+{
+    var empresas = await context.Empresas
+        .AsNoTracking()
+        .Select(e => new
+        {
+            e.Id,
+            e.NombreEmpresa,
+            e.Direccion,
+            e.DescripcionEmpresa,
+            e.Email,
+            e.FechaRegistro
+        })
+        .ToListAsync();
 
+    return Results.Ok(empresas);
+});
+
+// GET por id (sin password)
 app.MapGet("/api/empresas/{id:int}", async (int id, TfgDbContext context) =>
 {
-    var item = await context.Empresas.FindAsync(id);
-    return item is null ? Results.NotFound() : Results.Ok(item);
+    var e = await context.Empresas
+        .AsNoTracking()
+        .Where(x => x.Id == id)
+        .Select(x => new
+        {
+            x.Id,
+            x.NombreEmpresa,
+            x.Direccion,
+            x.DescripcionEmpresa,
+            x.Email,
+            x.FechaRegistro
+        })
+        .FirstOrDefaultAsync();
+
+    return e is null ? Results.NotFound() : Results.Ok(e);
 });
 
-app.MapPost("/api/empresas", async (Empresa empresa, TfgDbContext context) =>
+// POST crear (hashea password + fecha)
+app.MapPost("/api/empresas", async (EmpresaCreateRequest req, TfgDbContext context) =>
 {
+    if (await context.Empresas.AnyAsync(e => e.Email == req.Email))
+        return Results.Conflict("Ese email ya existe");
+
+    var empresa = new Empresa
+    {
+        NombreEmpresa = req.NombreEmpresa,
+        Direccion = req.Direccion,
+        DescripcionEmpresa = req.DescripcionEmpresa,
+        Email = req.Email,
+        PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.PasswordHash),
+        FechaRegistro = DateTime.UtcNow
+    };
+
     context.Empresas.Add(empresa);
     await context.SaveChangesAsync();
-    return Results.Created($"/api/empresas/{empresa.Id}", empresa);
+
+    return Results.Created($"/api/empresas/{empresa.Id}", new
+    {
+        empresa.Id,
+        empresa.NombreEmpresa,
+        empresa.Direccion,
+        empresa.DescripcionEmpresa,
+        empresa.Email,
+        empresa.FechaRegistro
+    });
 });
 
+
+// PUT actualizar (sin tocar email/password/fecha)
 app.MapPut("/api/empresas/{id:int}", async (int id, Empresa empresa, TfgDbContext context) =>
 {
     var existing = await context.Empresas.FindAsync(id);
     if (existing is null) return Results.NotFound();
 
-    context.Entry(existing).CurrentValues.SetValues(empresa);
-    existing.Id = id;
+    existing.NombreEmpresa = empresa.NombreEmpresa;
+    existing.Direccion = empresa.Direccion;
+    existing.DescripcionEmpresa = empresa.DescripcionEmpresa;
+
+    // no tocamos existing.Email
+    // no tocamos existing.PasswordHash
+    // no tocamos existing.FechaRegistro
 
     await context.SaveChangesAsync();
     return Results.NoContent();
 });
 
+// DELETE
 app.MapDelete("/api/empresas/{id:int}", async (int id, TfgDbContext context) =>
 {
     var item = await context.Empresas.FindAsync(id);
